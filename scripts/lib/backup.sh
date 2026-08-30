@@ -165,6 +165,15 @@ backup_run_restic() {
 }
 
 # Bereinigt alte Snapshots im Restic-Repository basierend auf der Retention-Policy.
+#
+# WICHTIG: --group-by host,tags ist zwingend.
+# restic gruppiert per Default nach "host,paths". Da TARGET_DIR das Datum
+# enthaelt (/srv/backups/YYYY-MM-DD_HH-MM), ist der Pfad bei jedem Lauf ein
+# anderer - jeder Snapshot landete dadurch in einer eigenen Gruppe und war
+# darin gleichzeitig der juengste taegliche, woechentliche UND monatliche
+# Snapshot. Es wurde nie etwas geloescht: Das Repository wuchs unbegrenzt,
+# bis das Remote-Kontingent mit 507 Insufficient Storage dichtmachte.
+# Mit der Gruppierung nach Tag greift die Retention wie beabsichtigt.
 backup_prune_restic() {
     log "--- Restic Aufraeumen ---"
 
@@ -173,7 +182,7 @@ backup_prune_restic() {
 
     restic -r "$RESTIC_REPOSITORY" \
         "${RESTIC_AUTH_ARGS[@]}" \
-        forget --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" --prune
+        forget --group-by host,tags --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" --prune
 }
 
 # Bereinigt alte lokale Backup-Ordner in BACKUP_ROOT.

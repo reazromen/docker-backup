@@ -57,6 +57,10 @@ load_configuration() {
     KEEP_MONTHLY="${KEEP_MONTHLY:-6}"
     # Wie viele lokale Snapshot-Ordner in BACKUP_ROOT aufbewahrt werden sollen (standard: 1)
     KEEP_LOCAL_BACKUPS="${KEEP_LOCAL_BACKUPS:-1}"
+    # Mindestens noetiger freier Speicher in BACKUP_ROOT (in MB).
+    # Wird das unterschritten, bricht der Lauf sofort ab, statt die Platte
+    # vollzuschreiben. 0 deaktiviert die Pruefung.
+    MIN_FREE_LOCAL_MB="${MIN_FREE_LOCAL_MB:-51200}"
 
     require_config_var "BACKUP_ROOT" || return 1
     require_config_var "DOCKER_DIR" || return 1

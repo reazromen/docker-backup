@@ -8,6 +8,24 @@ _nc_debug() {
   [ "$NC_DEBUG" = "1" ] && log "[NC_DEBUG] $*"
 }
 
+# Deaktiviert den Nextcloud-Wartungsmodus und meldet einen Fehlschlag laut.
+# Wird per RETURN-Trap in backup_nextcloud und zusaetzlich aus dem EXIT-Trap
+# des Hauptskripts aufgerufen. Gibt immer 0 zurueck, damit sie unter
+# 'set -e' gefahrlos in Traps verwendet werden kann.
+nextcloud_ensure_maintenance_off() {
+  [ -n "${NEXTCLOUD_APP_CONTAINER:-}" ] || return 0
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${NEXTCLOUD_APP_CONTAINER}$" || return 0
+
+  if docker exec "${NEXTCLOUD_APP_CONTAINER}" php occ maintenance:mode --off >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # Haeufigste Ursache: Platte voll, occ kann config.php nicht schreiben.
+  log "FEHLER: Nextcloud-Wartungsmodus konnte NICHT deaktiviert werden - Nextcloud bleibt offline!"
+  log "        Manuell pruefen: docker exec -u www-data ${NEXTCLOUD_APP_CONTAINER} php occ maintenance:mode --off"
+  return 0
+}
+
 backup_nextcloud() {
   log "--- Nextcloud Backup gestartet ---"
 
@@ -26,7 +44,9 @@ backup_nextcloud() {
     || { log "FEHLER: Maintenance Mode konnte nicht aktiviert werden"; return 1; }
 
   # Sicherheitsnetz: Maintenance Mode beim Exit immer deaktivieren
-  trap 'docker exec "${NEXTCLOUD_APP_CONTAINER}" php occ maintenance:mode --off 2>/dev/null || true' RETURN
+  # Vorher wurde ein Fehlschlag hier durch '2>/dev/null || true' verschluckt.
+  # Genau das hat verborgen, dass Nextcloud im Wartungsmodus haengen blieb.
+  trap 'nextcloud_ensure_maintenance_off' RETURN
 
   local NC_BACKUP_DIR="${TARGET_DIR}/nextcloud"
   mkdir -p "${NC_BACKUP_DIR}"
@@ -89,7 +109,7 @@ backup_nextcloud() {
 
   # 4. Maintenance Mode AUS (auch via trap, aber explizit sauberer)
   log "Nextcloud: Deaktiviere Maintenance Mode..."
-  docker exec "${NEXTCLOUD_APP_CONTAINER}" php occ maintenance:mode --off
+  nextcloud_ensure_maintenance_off
 
   log "--- Nextcloud Backup abgeschlossen ---"
 }

@@ -1,0 +1,20 @@
+# Ausschlussliste fuer das KRITISCHE Repository (kleines, zuverlaessiges Ziel).
+#
+# Hier steht alles, was gross ist und unbegrenzt wachsen kann. Diese Daten
+# gehoeren ins Bulk-Repository auf dem grossen Ziel, nicht auf ein
+# kontingentiertes Webspace-Paket.
+#
+# Was NICHT ausgeschlossen ist und damit im kritischen Satz landet:
+#   - vaultwarden/            (Passwort-Tresor)
+#   - mysql/                  (Datenbank-Dumps)
+#   - nextcloud/nextcloud-db.sql.gz, config/, custom_apps/, themes/
+#   - docker/                 (alle docker-compose.yml, .env, Konfigurationen)
+
+# Nextcloud-Nutzerdaten - liegen doppelt vor: einmal aus dem nextcloud/-rsync,
+# einmal aus der docker/-Vollkopie. Beide Varianten treffen wir mit **/.
+**/nextcloud/data
+
+# Immich-Postgres-Verzeichnis. Aktuell nur eine Dateikopie einer laufenden
+# Datenbank und damit ohnehin nicht verlaesslich wiederherstellbar.
+# Gehoert durch einen pg_dumpall ersetzt, der dann hier hereingehoert.
+**/docker/apps/immich-app/postgres

@@ -185,6 +185,44 @@ backup_prune_restic() {
         forget --group-by host,tags --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" --prune
 }
 
+# Sichert nur den KRITISCHEN Satz in ein zweites, kleines Repository.
+#
+# Hintergrund: Das Haupt-Repository enthaelt eine Vollkopie von DOCKER_DIR.
+# Davon entfallen rund 20 von 23 GB allein auf Nextcloud-Nutzerdaten, die
+# unbegrenzt wachsen koennen. Auf einem kontingentierten Ziel verdraengen sie
+# damit genau das, was am wichtigsten ist - im August 2026 fiel deshalb auch
+# Vaultwarden aus dem Backup, als das Kontingent erschoepft war.
+#
+# Dieses Repository nimmt deshalb nur das Unverzichtbare auf: Vaultwarden,
+# Datenbank-Dumps und Container-Konfigurationen. Was ausgeschlossen wird,
+# steht in CRITICAL_EXCLUDES.
+#
+# Das Repository muss einmalig angelegt werden:
+#   restic -r "$RESTIC_REPOSITORY_CRITICAL" init
+backup_run_restic_critical() {
+    if [ -z "${RESTIC_REPOSITORY_CRITICAL:-}" ]; then
+        log "Kein kritisches Repository konfiguriert (RESTIC_REPOSITORY_CRITICAL) - uebersprungen."
+        return 0
+    fi
+
+    if [ ! -f "${CRITICAL_EXCLUDES:-}" ]; then
+        log "FEHLER: Ausschlussliste nicht gefunden: ${CRITICAL_EXCLUDES:-<leer>}"
+        return 1
+    fi
+
+    log "--- Restic Backup: kritischer Satz ---"
+    log "Ziel: $RESTIC_REPOSITORY_CRITICAL"
+
+    local ropts=("-r" "$RESTIC_REPOSITORY_CRITICAL" "${RESTIC_AUTH_ARGS[@]}")
+
+    restic "${ropts[@]}" unlock || log "WARNUNG: Restic-Unlock (kritisch) fehlgeschlagen."
+
+    # Auch hier gilt: erst aufraeumen, dann schreiben - siehe backup_prune_restic.
+    restic "${ropts[@]}" forget --group-by host,tags --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" --prune || log "WARNUNG: Aufraeumen des kritischen Repositories fehlgeschlagen."
+
+    restic "${ropts[@]}" backup "$TARGET_DIR" --exclude-file "$CRITICAL_EXCLUDES" --tag "$RESTIC_TAG_CRITICAL"
+}
+
 # Bereinigt alte lokale Backup-Ordner in BACKUP_ROOT.
 # Behaelt die Anzahl der Ordner gemäss KEEP_LOCAL_BACKUPS.
 backup_cleanup_local() {

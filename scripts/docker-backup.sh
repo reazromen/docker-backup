@@ -151,6 +151,10 @@ backup_nextcloud
 docker_stop_stacks_from_file "$ACTIVE_STACKS_STATE_FILE"
 backup_copy_docker_dirs
 
+# Der kritische Satz zuerst: klein, schnell und am wichtigsten. Scheitert
+# danach das grosse Backup, ist das Unverzichtbare bereits gesichert.
+backup_run_restic_critical
+
 # Erst aufraeumen, dann schreiben: Auf einem kontingentierten Remote muss
 # Platz frei sein, BEVOR restic neue Bloecke ablegt. Lief prune erst nach
 # dem Backup, konnte sich ein volles Repository nie selbst befreien

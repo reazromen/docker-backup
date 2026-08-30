@@ -52,6 +52,11 @@ load_configuration() {
     MYSQL_DEFAULT_PASSWORD="${MYSQL_DEFAULT_PASSWORD:-${MYSQL_PASSWORD:-}}"
 
     RESTIC_TAG="${RESTIC_TAG:-docker-backup}"
+    # Zweites, kleines Repository nur fuer den kritischen Satz.
+    # RESTIC_REPOSITORY_CRITICAL gehoert in die .env; ist es leer, wird der
+    # Schritt uebersprungen und das Verhalten bleibt wie bisher.
+    RESTIC_TAG_CRITICAL="${RESTIC_TAG_CRITICAL:-${RESTIC_TAG}-critical}"
+    CRITICAL_EXCLUDES="${CRITICAL_EXCLUDES:-$ROOT_DIR/critical-excludes.txt}"
     KEEP_DAILY="${KEEP_DAILY:-7}"
     KEEP_WEEKLY="${KEEP_WEEKLY:-4}"
     KEEP_MONTHLY="${KEEP_MONTHLY:-6}"

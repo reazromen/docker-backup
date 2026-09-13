@@ -46,8 +46,9 @@ Automated backup for a Linux Docker host using local snapshots, Restic deduplica
 
 ```text
 Docker data
-  -> Local snapshot (/srv/backups/<timestamp>)
-  -> Restic backup
+  -> Staging (/srv/backups/current, stable name)
+  -> Restic backup (critical set, then full set)
+  -> Rename to /srv/backups/<timestamp>
   -> Rclone remote (e.g. rclone:1blu:restic-repo)
   -> Primary storage (e.g. 1blu)
   -> [Optional] Secondary sync to Internxt
@@ -91,6 +92,15 @@ Example snapshot:
 ```text
 /srv/backups/2026-03-15_22-34
 ```
+
+During a run the data lives in `/srv/backups/current`. It is renamed to the
+dated folder only once both restic runs have finished.
+
+The stable name is required, not cosmetic: restic looks a parent snapshot up
+by host and path, so a dated path never has a predecessor and every run
+re-reads and re-hashes the whole set. `--ignore-inode --ignore-ctime` belong
+with it, because the staging directory is recreated on every run and its
+inodes and ctimes are therefore always new.
 
 ## Configuration
 

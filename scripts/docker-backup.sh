@@ -39,6 +39,10 @@ BACKUP_OK=0
 # gesichert werden konnte. Der Lauf geht dann weiter, meldet am Ende aber
 # einen Fehler - sonst bliebe ausgerechnet die wichtigste Luecke still.
 CRITICAL_FAILED=0
+# Wird gesetzt, wenn gar kein kritisches Repository konfiguriert ist. Das ist
+# kein Fehler, darf aber nicht unerwaehnt bleiben - siehe
+# backup_run_restic_critical.
+CRITICAL_SKIPPED=0
 START_TS="$(date +%s)"
 START_TIME="$(date '+%F %T')"
 HOSTNAME="$(hostname -f 2>/dev/null || hostname)"
@@ -81,7 +85,8 @@ Lokales Ziel: $TARGET_DIR
 Groesse: ${backup_size:-unbekannt}
 Frei (Lokal): ${free_local:-unbekannt}
 Frei (Remote): ${free_remote:-unbekannt}
-Restic: $RESTIC_REPOSITORY" \
+Restic: $RESTIC_REPOSITORY
+Kritischer Satz: $([ "$CRITICAL_SKIPPED" -eq 1 ] && echo "NICHT konfiguriert - nur im Haupt-Repository" || echo "gesichert")" \
             "${GOTIFY_PRIORITY_SUCCESS:-4}"
         log "=== Backup abgeschlossen: $DATE ==="
     else
@@ -123,7 +128,7 @@ fi
     "Backup gestartet (v$APP_VERSION)" \
     "Host: $HOSTNAME
 Start: $START_TIME
-Ziel: $TARGET_DIR" \
+Ziel: $ARCHIVE_DIR" \
     "${GOTIFY_PRIORITY_SUCCESS:-4}"
 
 # Staging zuerst leeren, dann den Platz pruefen - siehe backup_prepare_staging.

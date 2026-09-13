@@ -12,11 +12,23 @@ backup_prepare_staging() {
     # STAGING_NAME leer, zeigte STAGING_DIR auf "/" oder "/current".
     # require_config_var deckt BACKUP_ROOT bereits ab; hier steht die
     # Pruefung unmittelbar neben dem loeschenden Befehl.
+    #
+    # STAGING_NAME muss ausserdem ein einzelner Verzeichnisname sein. Ein
+    # Wert wie "../docker" kaeme sonst durch und das rm -rf traefe
+    # /srv/docker - ein reiner Zeichenkettenvergleich gegen BACKUP_ROOT
+    # faengt das nicht ab.
     if [ -z "${BACKUP_ROOT:-}" ] || [ -z "${STAGING_NAME:-}" ] ||
        [ "$STAGING_DIR" = "/" ] || [ "$STAGING_DIR" = "$BACKUP_ROOT" ]; then
         log "FEHLER: Unplausibler Staging-Pfad: '${STAGING_DIR:-<leer>}' - Abbruch."
         return 1
     fi
+
+    case "$STAGING_NAME" in
+        */*|.|..)
+            log "FEHLER: STAGING_NAME muss ein einzelner Verzeichnisname sein, ist aber '$STAGING_NAME' - Abbruch."
+            return 1
+            ;;
+    esac
 
     if [ -d "$STAGING_DIR" ]; then
         log "Rest eines vorherigen Laufs gefunden - wird entfernt."
@@ -37,6 +49,16 @@ backup_archive_staging() {
     if [ ! -d "$STAGING_DIR" ]; then
         log "WARNUNG: $STAGING_DIR existiert nicht - nichts zu archivieren."
         return 0
+    fi
+
+    # Zweiter loeschender Befehl, also derselbe Schutzgurt wie in
+    # backup_prepare_staging. Waere DATE leer, zeigte ARCHIVE_DIR auf
+    # BACKUP_ROOT selbst - das rm -rf unten raeumte dann saemtliche lokalen
+    # Staende ab. Nicht wahrscheinlich, aber der Schaden waere vollstaendig.
+    if [ -z "${DATE:-}" ] || [ "$ARCHIVE_DIR" = "$BACKUP_ROOT" ] ||
+       [ "$ARCHIVE_DIR" = "$BACKUP_ROOT/" ] || [ "$ARCHIVE_DIR" = "/" ]; then
+        log "FEHLER: Unplausibler Archivpfad: '${ARCHIVE_DIR:-<leer>}' - Staging bleibt liegen."
+        return 1
     fi
 
     # Kann nur bei zwei Laeufen in derselben Minute auftreten; der flock im
@@ -240,14 +262,21 @@ backup_run_restic() {
 
 # Bereinigt alte Snapshots im Restic-Repository basierend auf der Retention-Policy.
 #
-# WICHTIG: --group-by host,tags ist zwingend.
-# restic gruppiert per Default nach "host,paths". Da TARGET_DIR das Datum
-# enthaelt (/srv/backups/YYYY-MM-DD_HH-MM), ist der Pfad bei jedem Lauf ein
-# anderer - jeder Snapshot landete dadurch in einer eigenen Gruppe und war
-# darin gleichzeitig der juengste taegliche, woechentliche UND monatliche
-# Snapshot. Es wurde nie etwas geloescht: Das Repository wuchs unbegrenzt,
-# bis das Remote-Kontingent mit 507 Insufficient Storage dichtmachte.
-# Mit der Gruppierung nach Tag greift die Retention wie beabsichtigt.
+# WICHTIG: --group-by host,tags ist zwingend - auch weiterhin.
+#
+# Urspruenglich stand hier, der Grund sei das Datum im Pfad: restic gruppiert
+# per Default nach "host,paths", und mit /srv/backups/YYYY-MM-DD_HH-MM landete
+# jeder Snapshot in einer eigenen Gruppe. Er war darin gleichzeitig der
+# juengste taegliche, woechentliche UND monatliche - es wurde nie etwas
+# geloescht, das Repository wuchs unbegrenzt, bis das Remote-Kontingent mit
+# 507 Insufficient Storage dichtmachte.
+#
+# Seit dem stabilen Staging-Pfad trifft diese Begruendung nicht mehr zu, das
+# Flag bleibt aber richtig: Im Repository liegen weiterhin die alten
+# Snapshots mit datierten Pfaden, und ohne die Gruppierung nach Tag fielen
+# sie wieder in eigene Gruppen und damit aus der Retention. Nachgemessen:
+# mit --group-by host,tags werden alte und neue Snapshots gemeinsam bewertet,
+# mit dem Default host,paths wird nichts entfernt.
 backup_prune_restic() {
     log "--- Restic Aufraeumen ---"
 
@@ -275,7 +304,15 @@ backup_prune_restic() {
 #   restic -r "$RESTIC_REPOSITORY_CRITICAL" init
 backup_run_restic_critical() {
     if [ -z "${RESTIC_REPOSITORY_CRITICAL:-}" ]; then
-        log "Kein kritisches Repository konfiguriert (RESTIC_REPOSITORY_CRITICAL) - uebersprungen."
+        # Kein Fehler - ohne zweites Ziel ist das Werkzeug voll brauchbar.
+        # Aber auch nicht still: Genau dieser Zweig lief auf dem Produktivhost
+        # seit dem 30.08.2026 jede Nacht durch, waehrend jeder Lauf Erfolg
+        # meldete. Der kritische Satz lag dadurch nur im grossen Repository,
+        # und aufgefallen ist es erst, als jemand gezielt nachsah. Die
+        # Erfolgsmeldung sagt es jetzt dazu.
+        CRITICAL_SKIPPED=1
+        log "HINWEIS: Kein kritisches Repository konfiguriert (RESTIC_REPOSITORY_CRITICAL)."
+        log "         Der kritische Satz liegt damit NUR in $RESTIC_REPOSITORY."
         return 0
     fi
 
@@ -294,7 +331,21 @@ backup_run_restic_critical() {
     restic "${ropts[@]}" unlock || log "WARNUNG: Restic-Unlock (kritisch) fehlgeschlagen."
 
     # Auch hier gilt: erst aufraeumen, dann schreiben - siehe backup_prune_restic.
-    restic "${ropts[@]}" forget --group-by host,tags --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" --prune || log "WARNUNG: Aufraeumen des kritischen Repositories fehlgeschlagen."
+    #
+    # Ein Fehlschlag darf den Lauf nicht abbrechen, aber er ist auch keine
+    # blosse Randnotiz: Auf einem kontingentierten Ziel wie einem
+    # Webspace-Paket ist ein nicht aufgeraeumtes Repository der Vorbote des
+    # naechsten Ausfalls. Genau so ist im August 2026 Vaultwarden aus dem
+    # Backup gefallen. Der Lauf geht weiter, meldet am Ende aber einen Fehler.
+    if ! restic "${ropts[@]}" forget \
+            --group-by host,tags \
+            --keep-daily "$KEEP_DAILY" \
+            --keep-weekly "$KEEP_WEEKLY" \
+            --keep-monthly "$KEEP_MONTHLY" \
+            --prune; then
+        CRITICAL_FAILED=1
+        log "FEHLER: Aufraeumen des kritischen Repositories fehlgeschlagen - der Lauf wird fortgesetzt."
+    fi
 
     # Siehe backup_run_restic zur Begruendung von --ignore-inode/--ignore-ctime.
     #

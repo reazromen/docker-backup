@@ -9,6 +9,11 @@
 #   - nextcloud/nextcloud-db.sql.gz, config/, custom_apps/, themes/
 #   - docker/                 (alle docker-compose.yml, .env, Konfigurationen,
 #                              darin auch docker/apps/vaultwarden/backup/)
+#                              ABER: docker/apps/nextcloud/data faellt unter den
+#                              Ausschluss **/nextcloud/data weiter unten. Der
+#                              gesamte Nextcloud-Datenbaum fehlt hier also,
+#                              einschliesslich config.php - die kommt ueber
+#                              nextcloud/config/ aus dem rsync herein.
 #   - mysql/                  nur, wenn MYSQL_INSTANCES in backup.conf auf einen
 #                             Container zeigt, den es wirklich gibt. Steht dort
 #                             ein toter Eintrag, legt do_mysql_dump das

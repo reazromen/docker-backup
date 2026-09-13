@@ -84,7 +84,18 @@ load_configuration() {
     fi
 
     DATE="$(date +%F_%H-%M)"
-    TARGET_DIR="$BACKUP_ROOT/$DATE"
+
+    # Gearbeitet wird in einem Verzeichnis mit STABILEM Namen, archiviert wird
+    # erst danach unter dem Datum.
+    #
+    # Grund: restic sucht den Parent-Snapshot ueber Host und Pfad. Solange
+    # direkt nach /srv/backups/<datum> gesichert wurde, war der Pfad bei jedem
+    # Lauf ein anderer - es wurde nie ein Parent gefunden, und restic las und
+    # hashte jedes Mal den kompletten Satz (44 GiB) statt nur der Aenderungen.
+    STAGING_NAME="${STAGING_NAME:-current}"
+    STAGING_DIR="$BACKUP_ROOT/$STAGING_NAME"
+    ARCHIVE_DIR="$BACKUP_ROOT/$DATE"
+    TARGET_DIR="$STAGING_DIR"
     LOG_DIR="${LOG_DIR:-$DEFAULT_LOG_DIR}"
     LOG_FILE="$LOG_DIR/docker-backup-$DATE.log"
 

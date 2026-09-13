@@ -121,6 +121,9 @@ Start: $START_TIME
 Ziel: $TARGET_DIR" \
     "${GOTIFY_PRIORITY_SUCCESS:-4}"
 
+# Staging zuerst leeren, dann den Platz pruefen - siehe backup_prepare_staging.
+backup_prepare_staging
+
 # --- Vorabpruefung: genuegend lokaler Speicher vorhanden? ---
 # Bricht ab, BEVOR halb fertige Daten geschrieben werden. Der EXIT-Trap
 # raeumt danach alte Ordner ab, sodass der naechste Lauf wieder Platz hat.
@@ -132,8 +135,6 @@ if [ "${MIN_FREE_LOCAL_MB:-0}" -gt 0 ] && [ -n "${FREE_LOCAL_MB:-}" ]; then
     fi
     log "Freier Speicher in $BACKUP_ROOT: ${FREE_LOCAL_MB} MB (Minimum: ${MIN_FREE_LOCAL_MB} MB)"
 fi
-
-mkdir -p "$TARGET_DIR"
 
 log "=== Backup gestartet: $DATE (Version: $APP_VERSION) ==="
 
@@ -161,6 +162,11 @@ backup_run_restic_critical
 # (507 Insufficient Storage -> Abbruch -> prune wurde nie erreicht).
 backup_prune_restic
 backup_run_restic
+
+# Erst jetzt aus dem Staging in den datierten Ordner umbenennen: Bis hierhin
+# musste der Pfad stabil bleiben, damit restic den Parent findet.
+backup_archive_staging
+
 backup_sync_to_internxt
 
 # backup_cleanup_local laeuft jetzt im EXIT-Trap (siehe cleanup()),

@@ -1,5 +1,59 @@
 #!/bin/bash
 
+# Legt das Staging-Verzeichnis frisch an.
+#
+# Muss VOR der Platzpruefung laufen: Bricht ein Lauf ab, bleibt der halbe
+# Stand unter STAGING_DIR liegen. Wuerde erst geprueft und dann geraeumt,
+# koennte ein einmal zu voller Datentraeger jeden weiteren Lauf blockieren.
+backup_prepare_staging() {
+    log "--- Staging vorbereiten ($STAGING_DIR) ---"
+
+    # Schutzgurt vor dem rm -rf weiter unten: Waeren BACKUP_ROOT oder
+    # STAGING_NAME leer, zeigte STAGING_DIR auf "/" oder "/current".
+    # require_config_var deckt BACKUP_ROOT bereits ab; hier steht die
+    # Pruefung unmittelbar neben dem loeschenden Befehl.
+    if [ -z "${BACKUP_ROOT:-}" ] || [ -z "${STAGING_NAME:-}" ] ||
+       [ "$STAGING_DIR" = "/" ] || [ "$STAGING_DIR" = "$BACKUP_ROOT" ]; then
+        log "FEHLER: Unplausibler Staging-Pfad: '${STAGING_DIR:-<leer>}' - Abbruch."
+        return 1
+    fi
+
+    if [ -d "$STAGING_DIR" ]; then
+        log "Rest eines vorherigen Laufs gefunden - wird entfernt."
+        rm -rf "$STAGING_DIR"
+    fi
+
+    mkdir -p "$STAGING_DIR"
+}
+
+# Benennt das Staging-Verzeichnis nach dem Lauf in den datierten Ordner um.
+#
+# Erst dadurch wird der Stand ein Archiv, das backup_cleanup_local anhand des
+# Datums im Namen findet und nach KEEP_LOCAL_BACKUPS begrenzt. Das Umbenennen
+# ist ein rename() im selben Dateisystem: atomar und ohne Kopieraufwand.
+backup_archive_staging() {
+    log "--- Staging archivieren nach $ARCHIVE_DIR ---"
+
+    if [ ! -d "$STAGING_DIR" ]; then
+        log "WARNUNG: $STAGING_DIR existiert nicht - nichts zu archivieren."
+        return 0
+    fi
+
+    # Kann nur bei zwei Laeufen in derselben Minute auftreten; der flock im
+    # Hauptskript schliesst das eigentlich aus. Ohne diese Pruefung wuerde mv
+    # das Staging IN den vorhandenen Ordner hinein verschieben.
+    if [ -e "$ARCHIVE_DIR" ]; then
+        log "WARNUNG: $ARCHIVE_DIR existiert bereits - wird ersetzt."
+        rm -rf "$ARCHIVE_DIR"
+    fi
+
+    mv "$STAGING_DIR" "$ARCHIVE_DIR"
+
+    # Ab hier zeigt TARGET_DIR auf das Archiv, damit Groessenermittlung und
+    # Gotify-Meldung im EXIT-Trap den richtigen Pfad nennen.
+    TARGET_DIR="$ARCHIVE_DIR"
+}
+
 # Nutzt die Backup-Routine von VaultVarden und erzeugt einen DB-Dump.
 # Erwartet, dass Vaultwarden als Docker Compose Projekt existiert.
 backup_vaultwarden() {
@@ -157,10 +211,30 @@ backup_run_restic() {
     # Entferne evtl. vorhandene verwaiste Locks
     restic -r "$RESTIC_REPOSITORY" "${RESTIC_AUTH_ARGS[@]}" unlock || log "WARNUNG: Restic-Unlock fehlgeschlagen."
 
+    # --ignore-inode und --ignore-ctime sind hier zwingend, nicht optional:
+    # Das Staging wird bei jedem Lauf frisch per tar entpackt, Inode und
+    # ctime sind daher immer neu. Ohne diese Schalter findet restic zwar
+    # dank des stabilen Pfades den Parent, meldet aber trotzdem jede Datei
+    # als "changed" und liest den gesamten Satz erneut - der stabile Pfad
+    # allein bringt dann nichts. Nachgemessen mit einem Testrepository:
+    #   stabiler Pfad allein            -> 200 changed
+    #   stabiler Pfad + diese Schalter  -> 200 unmodified
+    # Erkauft wird das damit, dass eine Aenderung ohne neue mtime und ohne
+    # neue Groesse uebersehen wuerde. Da beides aus dem Quelldateisystem
+    # stammt, faellt das hier nicht ins Gewicht.
+    #
+    # --group-by host,paths,tags nimmt den Tag in die Parent-Suche auf.
+    # Seit beide Laeufe denselben stabilen Pfad sichern, unterscheidet nur
+    # noch der Tag den vollen vom kritischen Satz. Zeigten beide Variablen
+    # versehentlich auf dasselbe Repository, wuerde sonst der jeweils
+    # andere Satz als Parent herangezogen.
     restic -r "$RESTIC_REPOSITORY" \
         "${RESTIC_AUTH_ARGS[@]}" \
         backup "$TARGET_DIR" \
         --tag "$RESTIC_TAG" \
+        --group-by host,paths,tags \
+        --ignore-inode \
+        --ignore-ctime \
         --verbose
 }
 
@@ -220,7 +294,13 @@ backup_run_restic_critical() {
     # Auch hier gilt: erst aufraeumen, dann schreiben - siehe backup_prune_restic.
     restic "${ropts[@]}" forget --group-by host,tags --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" --prune || log "WARNUNG: Aufraeumen des kritischen Repositories fehlgeschlagen."
 
-    restic "${ropts[@]}" backup "$TARGET_DIR" --exclude-file "$CRITICAL_EXCLUDES" --tag "$RESTIC_TAG_CRITICAL"
+    # Siehe backup_run_restic zur Begruendung der Schalter.
+    restic "${ropts[@]}" backup "$TARGET_DIR" \
+        --exclude-file "$CRITICAL_EXCLUDES" \
+        --tag "$RESTIC_TAG_CRITICAL" \
+        --group-by host,paths,tags \
+        --ignore-inode \
+        --ignore-ctime
 }
 
 # Bereinigt alte lokale Backup-Ordner in BACKUP_ROOT.

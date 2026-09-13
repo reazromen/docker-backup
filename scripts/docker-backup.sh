@@ -35,6 +35,10 @@ source "$LIB_DIR/nextcloud.sh"
 
 LOCK_FILE="/var/lock/docker-backup.lock"
 BACKUP_OK=0
+# Wird von backup_run_restic_critical gesetzt, wenn der kritische Satz nicht
+# gesichert werden konnte. Der Lauf geht dann weiter, meldet am Ende aber
+# einen Fehler - sonst bliebe ausgerechnet die wichtigste Luecke still.
+CRITICAL_FAILED=0
 START_TS="$(date +%s)"
 START_TIME="$(date '+%F %T')"
 HOSTNAME="$(hostname -f 2>/dev/null || hostname)"
@@ -59,7 +63,7 @@ cleanup() {
     # bis BACKUP_ROOT volllief - und der naechste Lauf scheiterte frueher.
     backup_cleanup_local || log "WARNUNG: Lokales Aufraeumen fehlgeschlagen."
 
-    if [ "$exit_code" -eq 0 ] && [ "$BACKUP_OK" -eq 1 ]; then
+    if [ "$exit_code" -eq 0 ] && [ "$BACKUP_OK" -eq 1 ] && [ "$CRITICAL_FAILED" -eq 0 ]; then
         if [ -f "$ACTIVE_STACKS_STATE_FILE" ]; then
             rm -f "$ACTIVE_STACKS_STATE_FILE"
         fi
@@ -90,6 +94,7 @@ Fehlerzeit: $end_time
 Dauer bis Fehler: $duration
 Letztes lokales Ziel: $TARGET_DIR
 Frei (Lokal): ${free_local:-unbekannt}
+Kritischer Satz: $([ "$CRITICAL_FAILED" -eq 1 ] && echo "FEHLGESCHLAGEN" || echo "ok")
 Bitte Journal/Log pruefen." \
             "${GOTIFY_PRIORITY_ERROR:-8}"
         log "=== Backup fehlgeschlagen: $DATE ==="

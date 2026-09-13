@@ -226,8 +226,8 @@ backup_run_restic() {
     # --group-by host,paths,tags nimmt den Tag in die Parent-Suche auf.
     # Seit beide Laeufe denselben stabilen Pfad sichern, unterscheidet nur
     # noch der Tag den vollen vom kritischen Satz. Zeigten beide Variablen
-    # versehentlich auf dasselbe Repository, wuerde sonst der jeweils
-    # andere Satz als Parent herangezogen.
+    # versehentlich auf dasselbe Repository, wuerde sonst der jeweils andere
+    # Satz als Parent herangezogen.
     restic -r "$RESTIC_REPOSITORY" \
         "${RESTIC_AUTH_ARGS[@]}" \
         backup "$TARGET_DIR" \
@@ -280,8 +280,10 @@ backup_run_restic_critical() {
     fi
 
     if [ ! -f "${CRITICAL_EXCLUDES:-}" ]; then
+        CRITICAL_FAILED=1
         log "FEHLER: Ausschlussliste nicht gefunden: ${CRITICAL_EXCLUDES:-<leer>}"
-        return 1
+        log "        Der kritische Satz wird uebersprungen, der Lauf geht weiter."
+        return 0
     fi
 
     log "--- Restic Backup: kritischer Satz ---"
@@ -294,13 +296,23 @@ backup_run_restic_critical() {
     # Auch hier gilt: erst aufraeumen, dann schreiben - siehe backup_prune_restic.
     restic "${ropts[@]}" forget --group-by host,tags --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY" --prune || log "WARNUNG: Aufraeumen des kritischen Repositories fehlgeschlagen."
 
-    # Siehe backup_run_restic zur Begruendung der Schalter.
-    restic "${ropts[@]}" backup "$TARGET_DIR" \
-        --exclude-file "$CRITICAL_EXCLUDES" \
-        --tag "$RESTIC_TAG_CRITICAL" \
-        --group-by host,paths,tags \
-        --ignore-inode \
-        --ignore-ctime
+    # Siehe backup_run_restic zur Begruendung von --ignore-inode/--ignore-ctime.
+    #
+    # Ein Fehlschlag hier darf das grosse Backup NICHT verhindern. Vorher
+    # waere der Lauf durch "set -e" an dieser Stelle abgebrochen: Ein nicht
+    # erreichbares kleines Ziel haette damit auch das Hetzner-Backup
+    # gekostet - genau andersherum als beabsichtigt. Der Fehlschlag wird
+    # stattdessen vermerkt und am Ende des Laufs als Fehler gemeldet.
+    if ! restic "${ropts[@]}" backup "$TARGET_DIR" \
+            --exclude-file "$CRITICAL_EXCLUDES" \
+            --tag "$RESTIC_TAG_CRITICAL" \
+            --group-by host,paths,tags \
+            --ignore-inode \
+            --ignore-ctime; then
+        CRITICAL_FAILED=1
+        log "FEHLER: Backup des kritischen Satzes fehlgeschlagen - der Lauf wird fortgesetzt."
+        return 0
+    fi
 }
 
 # Bereinigt alte lokale Backup-Ordner in BACKUP_ROOT.

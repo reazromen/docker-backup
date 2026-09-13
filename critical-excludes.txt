@@ -5,10 +5,18 @@
 # kontingentiertes Webspace-Paket.
 #
 # Was NICHT ausgeschlossen ist und damit im kritischen Satz landet:
-#   - vaultwarden/            (Passwort-Tresor)
-#   - mysql/                  (Datenbank-Dumps)
+#   - vaultwarden/            (Sidecar-Dump des Passwort-Tresors)
 #   - nextcloud/nextcloud-db.sql.gz, config/, custom_apps/, themes/
-#   - docker/                 (alle docker-compose.yml, .env, Konfigurationen)
+#   - docker/                 (alle docker-compose.yml, .env, Konfigurationen,
+#                              darin auch docker/apps/vaultwarden/backup/)
+#   - mysql/                  nur, wenn MYSQL_INSTANCES in backup.conf auf einen
+#                             Container zeigt, den es wirklich gibt. Steht dort
+#                             ein toter Eintrag, legt do_mysql_dump das
+#                             Verzeichnis gar nicht erst an.
+#
+# Nachgeprueft am 13.09.2026 gegen einen echten Staging-Stand: von 41 GB
+# bleiben rund 2 GB uebrig, der Vaultwarden-Dump ist doppelt enthalten
+# (einmal aus backup_vaultwarden, einmal aus der docker-Vollkopie).
 
 # Nextcloud-Nutzerdaten - liegen doppelt vor: einmal aus dem nextcloud/-rsync,
 # einmal aus der docker/-Vollkopie. Beide Varianten treffen wir mit **/.

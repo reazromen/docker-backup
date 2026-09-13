@@ -13,13 +13,14 @@ Docker Services
   -> Nextcloud backup (maintenance mode, DB dump, data sync)
   -> Detect and save active stacks to `.active_stacks`
   -> Stop non-excluded stacks
-  -> Local Snapshot (/srv/backups/<timestamp>)
-  -> Restic Backup (deduplicated, encrypted)
+  -> Staging directory (/srv/backups/current, stable name)
+  -> Restic backup: critical set (small, reliable target)
+  -> Prune old Restic snapshots (before writing, not after)
+  -> Restic backup: full set (deduplicated, encrypted)
   -> rclone Remote (primary storage, e.g. 1blu)
+  -> Rename staging to /srv/backups/<timestamp>
   -> [Optional] Internxt secondary sync
-  -> Prune old Restic snapshots
-  -> Clean up old local snapshots
-  -> Restart stacks
+  -> EXIT trap: restart stacks, maintenance mode off, clean up old snapshots
   -> Gotify Notification
 ```
 
@@ -36,7 +37,13 @@ Example stacks:
 
 ### Local Snapshot
 
-Snapshots are stored locally before upload:
+A run writes into a staging directory with a **stable** name:
+
+```text
+/srv/backups/current
+```
+
+Once both restic runs are done, it is renamed to the dated folder:
 
 ```text
 /srv/backups/<timestamp>
@@ -44,7 +51,14 @@ Snapshots are stored locally before upload:
 
 Example: `/srv/backups/2026-03-15_22-34`
 
+The stable name is required, not cosmetic. restic looks a parent snapshot up
+by host and path, so a dated path never has a predecessor and every run
+re-reads and re-hashes the entire set. The same reason makes
+`--ignore-inode --ignore-ctime` mandatory: the staging directory is recreated
+on every run, so inode and ctime are always new.
+
 The number of retained local snapshots is controlled by `KEEP_LOCAL_BACKUPS` in `backup.conf`.
+`current` is not counted - it is cleared at the start of the next run.
 
 ### Backup Script
 

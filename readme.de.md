@@ -46,8 +46,9 @@ Automatisiertes Backup für einen Linux Docker-Host mit lokalen Snapshots, Resti
 
 ```text
 Docker-Daten
-  -> Lokaler Snapshot (/srv/backups/<zeitstempel>)
-  -> Restic-Backup
+  -> Staging (/srv/backups/current, fester Name)
+  -> Restic-Backup (kritischer Satz, dann Vollsatz)
+  -> Umbenennen nach /srv/backups/<zeitstempel>
   -> Rclone-Remote (z. B. rclone:1blu:restic-repo)
   -> Primärer Speicher (z. B. 1blu)
   -> [Optional] Sekundär-Sync zu Internxt
@@ -91,6 +92,16 @@ Beispiel-Snapshot:
 ```text
 /srv/backups/2026-03-15_22-34
 ```
+
+Waehrend eines Laufs liegen die Daten unter `/srv/backups/current`. Erst wenn
+beide Restic-Laeufe fertig sind, wird dieses Verzeichnis in den datierten
+Ordner umbenannt.
+
+Der feste Name ist notwendig, nicht kosmetisch: Restic sucht den
+Parent-Snapshot ueber Host und Pfad. Bei einem datierten Pfad gibt es nie
+einen Vorgaenger, und jeder Lauf liest und hasht den kompletten Satz neu.
+Dazu gehoeren `--ignore-inode --ignore-ctime`, weil das Staging jeden Lauf
+frisch angelegt wird und Inode und ctime deshalb immer neu sind.
 
 ## Konfiguration
 

@@ -76,3 +76,11 @@ temp/
 *.tmp
 *.bak
 /docker/config/rclone.conf
+
+# =========================
+# Laufzeit-Status
+# =========================
+
+# Liste der Stacks, die ein Lauf gestoppt hat. Bleibt nach einem Abbruch
+# absichtlich liegen, damit resume-stacks.sh sie wieder starten kann.
+.active_stacks

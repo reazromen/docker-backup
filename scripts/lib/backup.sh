@@ -202,28 +202,87 @@ backup_mysql_dump() {
 
 # Kopiert die konfigurierten Docker-Verzeichnisse (DOCKER_DIR) in das Zielverzeichnis.
 # Nutzt 'pv' fuer eine Fortschrittsanzeige, falls installiert.
+#
+# Die Exitcodes der Pipeline werden EINZELN bewertet, statt sie von
+# 'set -o pipefail' pauschal als Fehler behandeln zu lassen. Grund: GNU tar
+# unterscheidet
+#
+#   0  alles gelesen
+#   1  "Some files differ" - eine Datei hat sich waehrend des Lesens
+#      geaendert; das Archiv ist bis auf diese Datei vollstaendig
+#   2  fataler Fehler (Quelle fehlt, Medium defekt, kein Platz)
+#
+# und in DOCKER_DIR laufen Datenbanken weiter: nextcloud-db und
+# nextcloud-redis stehen in EXCLUDED_CONTAINER_NAMES und werden deshalb
+# absichtlich nicht gestoppt. Ihre Dateien werden also permanent
+# beschrieben. In der Nacht auf den 14.09.2026 hat das den ganzen Lauf
+# gekippt:
+#
+#   tar: ./apps/nextcloud/data/redis/appendonlydir/appendonly.aof.10.incr.aof:
+#        file changed as we read it
+#   tar: ./apps/nextcloud/data/db/ib_logfile0: file changed as we read it
+#
+# Damit war ein Backup wegen zweier Dateien verloren, die in dieser Form
+# ohnehin wertlos sind - eine Dateikopie einer laufenden Datenbank ist nicht
+# verlaesslich wiederherstellbar. Die belastbare Sicherung der Nextcloud-DB
+# ist der Dump aus backup_nextcloud (nextcloud/nextcloud-db.sql.gz).
+#
+# Die Warnung wird bewusst NICHT per --warning=no-file-changed unterdrueckt:
+# Sie benennt die betroffene Datei und ist der einzige Hinweis darauf, dass
+# eine Datei inkonsistent im Archiv liegt.
 backup_copy_docker_dirs() {
     log "--- Kopiere Docker-Verzeichnisse ---"
     mkdir -p "$TARGET_DIR/docker"
 
-    if command -v pv >/dev/null 2>&1; then
-        log "Kopiere mit Fortschrittsanzeige (pv)"
-        local copy_size_bytes
-        copy_size_bytes="$(du -sb "$DOCKER_DIR" 2>/dev/null | awk '{print $1}')"
-
-        if [ -n "${copy_size_bytes:-}" ]; then
-            tar -C "$DOCKER_DIR" -cf - . \
-                | pv -f -pterb -s "$copy_size_bytes" \
-                | tar -C "$TARGET_DIR/docker" -xpf -
-        else
-            tar -C "$DOCKER_DIR" -cf - . \
-                | pv -f -pterb \
-                | tar -C "$TARGET_DIR/docker" -xpf -
-        fi
-    else
+    if ! command -v pv >/dev/null 2>&1; then
         log "pv nicht gefunden, kopiere ohne Fortschrittsanzeige"
         cp -a "$DOCKER_DIR/." "$TARGET_DIR/docker/"
+        return 0
     fi
+
+    log "Kopiere mit Fortschrittsanzeige (pv)"
+    local copy_size_bytes
+    copy_size_bytes="$(du -sb "$DOCKER_DIR" 2>/dev/null | awk '{print $1}')"
+
+    local pv_args=(-f -pterb)
+    if [ -n "${copy_size_bytes:-}" ]; then
+        pv_args+=(-s "$copy_size_bytes")
+    fi
+
+    # errexit hier gezielt aus, damit die Pipeline durchlaeuft und ihre
+    # Exitcodes ueberhaupt bewertet werden koennen.
+    local -a status
+    set +e
+    tar -C "$DOCKER_DIR" -cf - . \
+        | pv "${pv_args[@]}" \
+        | tar -C "$TARGET_DIR/docker" -xpf -
+    status=("${PIPESTATUS[@]}")
+    set -e
+
+    # Das Entpacken muss sauber sein - hier gibt es nichts zu tolerieren.
+    if [ "${status[2]}" -ne 0 ]; then
+        log "FEHLER: Entpacken nach $TARGET_DIR/docker fehlgeschlagen (Exit ${status[2]})."
+        return 1
+    fi
+
+    if [ "${status[1]}" -ne 0 ]; then
+        log "FEHLER: pv fehlgeschlagen (Exit ${status[1]})."
+        return 1
+    fi
+
+    case "${status[0]}" in
+        0)
+            ;;
+        1)
+            log "WARNUNG: Mindestens eine Datei hat sich waehrend des Lesens geaendert (tar Exit 1)."
+            log "         Betroffene Dateien stehen oben im Log. Der Lauf wird fortgesetzt;"
+            log "         fuer die Nextcloud-Datenbank gilt ohnehin der Dump, nicht die Dateikopie."
+            ;;
+        *)
+            log "FEHLER: Lesen von $DOCKER_DIR fehlgeschlagen (tar Exit ${status[0]})."
+            return 1
+            ;;
+    esac
 }
 
 # Fuehrt das Restic-Backup fuer das gesamte Zielverzeichnis aus.

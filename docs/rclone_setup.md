@@ -64,6 +64,38 @@ endpoint = fsn1.your-objectstorage.com
 
 > **Hinweis zur Sicherheit:** Passwörter in der `rclone.conf` sind standardmäßig mit einem einfachen Verfahren verschleiert. Wenn du sie manuell einträgst, kannst du `rclone obscure "dein_passwort"` nutzen, um den verschleierten String für das Feld `pass` zu generieren.
 
+### Beispiel: Hugging Face Storage Bucket (S3) - zusaetzliche Offsite-Kopie
+
+Hugging Face Storage Buckets stellen eine S3-kompatible API bereit. Verwende
+einen separaten Write-Token und daraus erzeugte S3-Zugangsdaten. Die
+Zugangsdaten gehoeren **nicht** in dieses Git-Repository.
+
+```ini
+[huggingface]
+type = s3
+provider = Other
+access_key_id = HFAK...
+secret_access_key = ...
+region = us-east-1
+endpoint = https://s3.hf.co/reazromen
+force_path_style = true
+list_version = 2
+```
+
+In `backup.conf`:
+
+```bash
+HF_RCLONE_REMOTE="huggingface"
+HF_BUCKET="nextcloud-backup"
+HF_PREFIX="restic"
+```
+
+Der normale Restic-Backup-Lauf bleibt das primaere Ziel. Nach einem
+erfolgreichen Backup wird das bereits verschluesselte Restic-Repository mit
+`rclone sync` in den privaten Hugging-Face-Bucket gespiegelt. Wenn Hugging Face
+nicht erreichbar ist, wird das primaere Backup nicht als fehlgeschlagen
+behandelt.
+
 ## 2. Speicherort der Konfiguration
 
 Stelle sicher, dass der Pfad zur Konfigurationsdatei in der `.env` korrekt gesetzt ist:

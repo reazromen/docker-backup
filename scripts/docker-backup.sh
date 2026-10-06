@@ -178,6 +178,7 @@ backup_run_restic
 backup_archive_staging
 
 backup_sync_to_internxt
+backup_sync_to_huggingface
 
 # backup_cleanup_local laeuft jetzt im EXIT-Trap (siehe cleanup()),
 # damit es auch bei einem Abbruch garantiert ausgefuehrt wird.

@@ -54,6 +54,12 @@ EXCLUDED_CONTAINER_NAMES=(
 # rclone-Remote-Name fuer Internxt-Sync (z.B. "internxt" oder "internxt-webdav")
 INTERNXT_RCLONE_REMOTE="internxt"
 
+# Optional Hugging Face Storage Bucket mirror.
+# Leave HF_RCLONE_REMOTE or HF_BUCKET empty to disable.
+HF_RCLONE_REMOTE="huggingface"
+HF_BUCKET=""
+HF_PREFIX="nextcloud-restic"
+
 # Nextcloud-spezifisch
 # Dump-Befehl fuer die Nextcloud-DB (Standard: Autodetection mariadb-dump > mysqldump)
 # NEXTCLOUD_DB_DUMP_CMD=mariadb-dump

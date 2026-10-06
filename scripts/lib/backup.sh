@@ -486,3 +486,38 @@ backup_sync_to_internxt() {
 
   log "--- Internxt Sync abgeschlossen ---"
 }
+
+backup_sync_to_huggingface() {
+  if [ -z "${HF_RCLONE_REMOTE:-}" ] || [ -z "${HF_BUCKET:-}" ]; then
+    log "--- Hugging Face sync disabled ---"
+    return 0
+  fi
+
+  local prefix="${HF_PREFIX:-nextcloud-restic}"
+  local destination="${HF_RCLONE_REMOTE}:${HF_BUCKET}"
+  if [ -n "$prefix" ]; then
+    destination="${destination}/${prefix#/}"
+  fi
+
+  log "--- Sync encrypted Restic repository to Hugging Face Storage Bucket ---"
+
+  if ! rclone lsd "${HF_RCLONE_REMOTE}:" \
+       --contimeout 10s \
+       --timeout 30s \
+       &>/dev/null; then
+    log "WARNUNG: Hugging Face Storage Bucket remote nicht erreichbar - Sync uebersprungen"
+    return 0
+  fi
+
+  rclone sync \
+    "$(echo "${RESTIC_REPOSITORY}" | sed 's|^rclone:||')" \
+    "$destination" \
+    --transfers "${HF_TRANSFERS:-4}" \
+    --checkers "${HF_CHECKERS:-8}" \
+    --retries 5 \
+    --log-file "${LOG_DIR}/rclone-huggingface-$(date +%F).log" \
+    --log-level INFO \
+    || log "WARNUNG: Hugging-Face-Sync fehlgeschlagen - primaeres Backup bleibt unveraendert"
+
+  log "--- Hugging Face sync abgeschlossen ---"
+}

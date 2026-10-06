@@ -325,3 +325,15 @@ To create a new release:
 - Primary storage: `1blu` via `rclone`
 - Secondary storage: `Internxt` via `rclone` (optional sync)
 - Notifications: `Gotify`
+
+
+## Hugging Face Storage Bucket mirror
+
+This fork adds an optional third-copy target for an already encrypted Restic
+repository. Hugging Face Storage Buckets are accessed through their
+S3-compatible endpoint with rclone. The primary backup remains independent;
+the Hugging Face copy is best-effort and can be disabled by leaving
+`HF_RCLONE_REMOTE` or `HF_BUCKET` empty.
+
+See `docs/rclone_setup.md` for the rclone S3 configuration. Never commit Hugging
+Face access keys or Restic passwords to Git.
